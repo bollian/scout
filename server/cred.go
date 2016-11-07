@@ -25,11 +25,11 @@ const (
 // Login checks a username and password and returns a secure cookie for future
 // authentication if the user is considered valid.  If not valid, an error is
 // returned indicating the problem.
-func (server *Server) Login(username string, password string) (*http.Cookie, error) {
+func Login(username string, password string) (*http.Cookie, error) {
 	var passhash []byte
 	safeUsername := EscapeSQLString(username) // make the username string injection-free
 
-	row := server.credStore.QueryRow(fmt.Sprintf("SELECT passhash FROM users WHERE username='%s'", safeUsername))
+	row := db.QueryRow(fmt.Sprintf("SELECT passhash FROM users WHERE username='%s'", safeUsername))
 	err := row.Scan(&passhash)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -47,7 +47,7 @@ func (server *Server) Login(username string, password string) (*http.Cookie, err
 	}
 
 	// update the authid
-	_, err = server.credStore.Exec(fmt.Sprintf("UPDATE users SET authid=%d WHERE username='%s'", authid, username))
+	_, err = db.Exec(fmt.Sprintf("UPDATE users SET authid=%d WHERE username='%s'", authid, username))
 	if err != nil {
 		return nil, data.ErrDatabaseUpdate
 	}
@@ -58,13 +58,13 @@ func (server *Server) Login(username string, password string) (*http.Cookie, err
 // Logout attempts to logout the user specified in the http request.  If the
 // request doesn't contain the valid identity of a user, or the user doesn't
 // exist, Logout returns false.
-func (server *Server) Logout(request *http.Request) bool {
-	user := server.GetUser(request)
+func Logout(request *http.Request) bool {
+	user := GetUser(request)
 	if user == nil {
 		return false
 	}
 	query := fmt.Sprintf("UPDATE users SET authid=-1 WHERE username='%s' && authid=%d", user.Username, user.Id)
-	_, err := server.credStore.Exec(query)
+	_, err := db.Exec(query)
 	if err != nil {
 		return false
 	}
@@ -74,7 +74,7 @@ func (server *Server) Logout(request *http.Request) bool {
 // GetUser determines if an http request is coming from a client that is currently
 // logged in.  If the client is logged in, a struct containing the user info is
 // returned, else nil.
-func (server *Server) GetUser(request *http.Request) *data.User {
+func GetUser(request *http.Request) *data.User {
 	if request == nil {
 		return nil
 	}
@@ -94,7 +94,7 @@ func (server *Server) GetUser(request *http.Request) *data.User {
 		realname string
 	)
 	now := data.Now()
-	row := server.credStore.QueryRow(fmt.Sprintf(
+	row := db.QueryRow(fmt.Sprintf(
 		`SELECT id, username, realname
  FROM users
  WHERE username='%s' && authid=%d && lastseen BETWEEN '%s' AND NOW()`, username, authid, now.Add(time.Minute*-30)))
@@ -114,7 +114,7 @@ func (server *Server) GetUser(request *http.Request) *data.User {
 // CreateUser adds a user to the credential store.  Returns the authentication
 // cookie, so no login is required after successfully creating a new user.  If
 // the user could not be created, an error is returned.
-func (server *Server) CreateUser(username, realname, password string, team int) (*http.Cookie, error) {
+func CreateUser(username, realname, password string, team int) (*http.Cookie, error) {
 	if !ValidUsername(username) {
 		return nil, data.InvalidUsername{Username: username}
 	}
@@ -132,7 +132,7 @@ func (server *Server) CreateUser(username, realname, password string, team int) 
 
 	query := fmt.Sprintf(`INSERT INTO users (username, realname, bcrypt, authid) VALUE ('%s', '%s', '%s', %d)`,
 		safeUsername, realname, string(passhash), authid)
-	_, err = server.credStore.Exec(query)
+	_, err = db.Exec(query)
 	if err != nil {
 		return nil, data.UsernameTakenError{Username: username}
 	}

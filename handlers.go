@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func indexHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func indexHandler(writer http.ResponseWriter, request *http.Request) error {
 	// first check to make sure we're serving the main page since everything not
 	// covered by the other handlers comes here
 	if request.URL.Path != "/" {
@@ -28,7 +28,7 @@ func indexHandler(butler *server.Server, writer http.ResponseWriter, request *ht
 	return nil
 }
 
-func competitionsHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func competitionsHandler(writer http.ResponseWriter, request *http.Request) error {
 	return data.HTTPNotFoundError{URL: request.URL}
 }
 
@@ -36,8 +36,8 @@ const (
 	frmPassword = `<input name="password" type="password" placeholder="Password" required>`
 )
 
-func loginHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
-	if user := butler.GetUser(request); user != nil {
+func loginHandler(writer http.ResponseWriter, request *http.Request) error {
+	if user := server.GetUser(request); user != nil {
 		// if the user is already logged in, redirect to the main page
 		http.Redirect(writer, request, "/", http.StatusFound)
 		return nil
@@ -101,8 +101,8 @@ func deliverSignup(writer http.ResponseWriter, userfill, errorText string) {
 </form>`, errorText, userfill, frmPassword)))
 }
 
-func signupHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
-	if user := butler.GetUser(request); user != nil {
+func signupHandler(writer http.ResponseWriter, request *http.Request) error {
+	if user := server.GetUser(request); user != nil {
 		// if the user is already logged in, redirect to the main page
 		http.Redirect(writer, request, "/", http.StatusFound)
 		return nil
@@ -112,7 +112,7 @@ func signupHandler(butler *server.Server, writer http.ResponseWriter, request *h
 		err := request.ParseForm()
 		if err != nil {
 			deliverSignup(writer, "", "")
-			butler.HandlerLog.Println(data.HTTPRequestParseError{Request: request}.Error())
+			server.HandlerLog.Println(data.HTTPRequestParseError{Request: request}.Error())
 			return nil
 		}
 
@@ -131,7 +131,7 @@ func signupHandler(butler *server.Server, writer http.ResponseWriter, request *h
 			return nil
 		}
 
-		authCookie, err := butler.CreateUser(username, realname, password, int(team))
+		authCookie, err := server.CreateUser(username, realname, password, int(team))
 		if err != nil {
 			switch err.(type) {
 			case data.UsernameTakenError:
@@ -139,7 +139,7 @@ func signupHandler(butler *server.Server, writer http.ResponseWriter, request *h
 				return nil
 			default:
 				deliverSignup(writer, username, "an unknown error occured")
-				butler.HandlerLog.Printf("unknown signup error (%s)\n", err.Error())
+				server.HandlerLog.Printf("unknown signup error (%s)\n", err.Error())
 				return nil
 			}
 		}
@@ -153,32 +153,32 @@ func signupHandler(butler *server.Server, writer http.ResponseWriter, request *h
 	return data.HTTPMethodError{Method: request.Method}
 }
 
-func logoutHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func logoutHandler(writer http.ResponseWriter, request *http.Request) error {
 	http.Redirect(writer, request, "/", http.StatusFound)
 	return nil
 }
 
-func teamsHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func teamsHandler(writer http.ResponseWriter, request *http.Request) error {
 	return data.HTTPNotFoundError{URL: request.URL}
 }
 
-func allDataHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func allDataHandler(writer http.ResponseWriter, request *http.Request) error {
 	return data.HTTPNotFoundError{URL: request.URL}
 }
 
-func matchesHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func matchesHandler(writer http.ResponseWriter, request *http.Request) error {
 	return data.HTTPNotFoundError{URL: request.URL}
 }
 
-func submissionHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func submissionHandler(writer http.ResponseWriter, request *http.Request) error {
 	return data.HTTPNotFoundError{URL: request.URL}
 }
 
-func fileHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func fileHandler(writer http.ResponseWriter, request *http.Request) error {
 	return data.HTTPNotFoundError{URL: request.URL}
 }
 
-func resourceHandler(butler *server.Server, writer http.ResponseWriter, request *http.Request) error {
+func resourceHandler(writer http.ResponseWriter, request *http.Request) error {
 	if strings.HasPrefix(request.URL.Path, "/js") {
 		request.URL.Path += ".js"
 		writer.Header().Set("Content-Type", "text/javascript")

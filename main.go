@@ -24,12 +24,6 @@ func main() {
 }
 
 func program() int {
-	website, err := server.New(":80")
-	if website == nil {
-		log.Printf("Unable to initialize server (%s)\n", err.Error())
-		return 1
-	}
-
 	folders := map[string]string{
 		"css": "text/css",
 		"js":  "text/javascript",
@@ -49,7 +43,7 @@ func program() int {
 
 			data := make([]byte, info.Size())
 			f.Read(data)
-			if !website.Cache("/"+info.Name(), data, contentType) {
+			if !server.Cache("/"+info.Name(), data, contentType) {
 				return errors.New("duplicate cache names")
 			}
 			return nil
@@ -60,19 +54,19 @@ func program() int {
 		}
 	}
 
-	website.Handle("/login", server.HandlerFunc(loginHandler))
-	website.Handle("/logout", server.HandlerFunc(logoutHandler))
-	website.Handle("/signup", server.HandlerFunc(signupHandler))
+	server.Handle("/login", server.HandlerFunc(loginHandler))
+	server.Handle("/logout", server.HandlerFunc(logoutHandler))
+	server.Handle("/signup", server.HandlerFunc(signupHandler))
 
-	website.Handle("/competitions", server.HandlerFunc(competitionsHandler))
-	website.Handle("/teams", server.HandlerFunc(teamsHandler))
-	website.Handle("/all", server.HandlerFunc(allDataHandler))
-	website.Handle("/matches", server.HandlerFunc(matchesHandler))
-	website.Handle("/submit", server.HandlerFunc(submissionHandler))
+	server.Handle("/competitions", server.HandlerFunc(competitionsHandler))
+	server.Handle("/teams", server.HandlerFunc(teamsHandler))
+	server.Handle("/all", server.HandlerFunc(allDataHandler))
+	server.Handle("/matches", server.HandlerFunc(matchesHandler))
+	server.Handle("/submit", server.HandlerFunc(submissionHandler))
 
-	website.Handle("/", server.HandlerFunc(indexHandler))
+	server.Handle("/", server.HandlerFunc(indexHandler))
 
-	err = website.ListenAndServe()
+	err := server.ListenAndServe()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error running listener: %s\n", err.Error())
 		return exitListenerError
