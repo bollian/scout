@@ -1,0 +1,24 @@
+.top-bar-container {
+	background: black;
+	color: white;
+	
+	height: 3em;
+	width: 100%;
+	float: top;
+	position: fixed;
+	
+	display: flex;
+	flex-direction: column;
+	justify-content: space-around;
+}
+
+.top-bar-horizontal {
+	display: flex;
+	justify-content: space-between;
+}
+
+.top-bar-spacer {
+	height: 4em;
+	width: 100%;
+	float: top;
+}
