@@ -17,6 +17,12 @@ const (
 )
 
 func main() {
+	defer func() {
+		if err := server.Close(); err != nil {
+			panic(err.Error())
+		}
+	}()
+
 	exit := program()
 	if exit != exitSuccess {
 		os.Exit(exit)
