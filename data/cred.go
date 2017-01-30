@@ -1,4 +1,4 @@
-package server
+package data
 
 import (
 	"crypto/rand"
@@ -8,12 +8,14 @@ import (
 	"math"
 	"math/big"
 	"net/http"
-	"scout/data"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	_ "github.com/go-sql-driver/mysql" // the init function registers a sql driver
 )
 
 const (
@@ -22,23 +24,55 @@ const (
 	maxAuthId      = math.MaxInt64
 )
 
+// User represents a sinle row from the accounts database
+type User struct {
+	Id       int64
+	Username string
+	RealName string
+	GameYear int
+}
+
+// DB represents a connection to the scouting database
+type DB struct {
+	db *sql.DB
+}
+
+// ConnectToDatabase establishes a connection to the database containing the information for the
+// provided year.  Returns a zero-initialized connection in the case of an error.  Remember to
+// close the connection after you're done with it.
+func ConnectToDatabase(year int) (DB, error) {
+	if !VerifyYear(year) {
+		return DB{}, ErrWrongYear
+	}
+	db, err := sql.Open("mysql", "scout@/scouting"+strconv.Itoa(year))
+	if err != nil {
+		return DB{}, err
+	}
+	return DB{db: db}, nil
+}
+
+// Close frees all resources used by the database connection.
+func (db DB) Close() error {
+	return db.db.Close()
+}
+
 // Login checks a username and password and returns a secure cookie for future
 // authentication if the user is considered valid.  If not valid, an error is
 // returned indicating the problem.
-func Login(username string, password string) (*http.Cookie, error) {
+func (db DB) Login(username string, password string) (*http.Cookie, error) {
 	var passhash []byte
 	safeUsername := EscapeSQLString(username) // make the username string injection-free
 
-	row := db.QueryRow(fmt.Sprintf("SELECT passhash FROM users WHERE username='%s'", safeUsername))
+	row := db.db.QueryRow(fmt.Sprintf("SELECT passhash FROM users WHERE username='%s'", safeUsername))
 	err := row.Scan(&passhash)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, data.ErrUsernameNotFound
+			return nil, ErrUsernameNotFound
 		}
-		return nil, errors.New("scout/server: unknown users database error")
+		return nil, errors.New("data.Login: unknown users query error")
 	}
 	if bcrypt.CompareHashAndPassword(passhash, []byte(password)) != nil {
-		return nil, data.ErrPasswordMismatch
+		return nil, ErrPasswordMismatch
 	}
 
 	authid, err := genAuthId()
@@ -47,9 +81,9 @@ func Login(username string, password string) (*http.Cookie, error) {
 	}
 
 	// update the authid
-	_, err = db.Exec(fmt.Sprintf("UPDATE users SET authid=%d WHERE username='%s'", authid, username))
+	_, err = db.db.Exec(fmt.Sprintf("UPDATE users SET authid=%d WHERE username='%s'", authid, username))
 	if err != nil {
-		return nil, data.ErrDatabaseUpdate
+		return nil, ErrDatabaseUpdate
 	}
 
 	return createAuthCookie(username, authid), nil
@@ -58,15 +92,18 @@ func Login(username string, password string) (*http.Cookie, error) {
 // Logout attempts to logout the user specified in the http request.  If the
 // request doesn't contain the valid identity of a user, or the user doesn't
 // exist, Logout returns false.
-func Logout(request *http.Request) bool {
-	user := GetUser(request)
+func (db DB) Logout(response http.ResponseWriter, request *http.Request) bool {
+	user := db.GetUser(request)
 	if user == nil {
 		return false
 	}
+
+	http.SetCookie(response, createAuthCookie("", big.NewInt(-1)))
+
 	query := fmt.Sprintf("UPDATE users SET authid=-1 WHERE username='%s' && authid=%d", user.Username, user.Id)
-	_, err := db.Exec(query)
+	_, err := db.db.Exec(query)
 	if err != nil {
-		return false
+		return false // unable to confirm that the user was logged out
 	}
 	return true
 }
@@ -74,7 +111,7 @@ func Logout(request *http.Request) bool {
 // GetUser determines if an http request is coming from a client that is currently
 // logged in.  If the client is logged in, a struct containing the user info is
 // returned, else nil.
-func GetUser(request *http.Request) *data.User {
+func (db DB) GetUser(request *http.Request) *User {
 	if request == nil {
 		return nil
 	}
@@ -93,8 +130,8 @@ func GetUser(request *http.Request) *data.User {
 		id       int64
 		realname string
 	)
-	now := data.Now()
-	row := db.QueryRow(fmt.Sprintf(
+	now := Now()
+	row := db.db.QueryRow(fmt.Sprintf(
 		`SELECT id, username, realname
  FROM users
  WHERE username='%s' && authid=%d && lastseen BETWEEN '%s' AND NOW()`, username, authid, now.Add(time.Minute*-30)))
@@ -103,7 +140,7 @@ func GetUser(request *http.Request) *data.User {
 		return nil
 	}
 
-	return &data.User{
+	return &User{
 		Username: username,
 		RealName: realname,
 		Id:       id,
@@ -114,12 +151,28 @@ func GetUser(request *http.Request) *data.User {
 // CreateUser adds a user to the credential store.  Returns the authentication
 // cookie, so no login is required after successfully creating a new user.  If
 // the user could not be created, an error is returned.
-func CreateUser(username, realname, password string, team int) (*http.Cookie, error) {
+func (db DB) CreateUser(username, realname, password string, team int, adminUsername, adminPassword string) (*http.Cookie, error) {
 	if !ValidUsername(username) {
-		return nil, data.InvalidUsername{Username: username}
+		return nil, ErrInvalidUsername
 	}
-	safeUsername := EscapeSQLString(username)
 
+	safeAdminUsername := EscapeSQLString(adminUsername)
+	var adminPasshash []byte
+	query := fmt.Sprintf("SELECT passhash FROM users WHERE username='%s' && admin=true", safeAdminUsername)
+	row := db.db.QueryRow(query)
+	if err := row.Scan(&adminPasshash); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrUsernameNotFound
+		}
+		fmt.Fprintln(os.Stderr, "data.CreateUser: "+err.Error())
+		return nil, errors.New("data.CreateUser: unknown users query error")
+	}
+	if bcrypt.CompareHashAndPassword(adminPasshash, []byte(adminPassword)) != nil {
+		return nil, ErrAdminPasswordMismatch
+	}
+
+	safeUsername := EscapeSQLString(username)
+	safeRealname := EscapeSQLString(realname)
 	passhash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
 		return nil, err
@@ -130,11 +183,12 @@ func CreateUser(username, realname, password string, team int) (*http.Cookie, er
 		return nil, err
 	}
 
-	query := fmt.Sprintf(`INSERT INTO users (username, realname, bcrypt, authid) VALUE ('%s', '%s', '%s', %d)`,
-		safeUsername, realname, string(passhash), authid)
-	_, err = db.Exec(query)
+	query = fmt.Sprintf(`INSERT INTO users (username, realname, passhash, authid) VALUE ('%s', '%s', '%s', %d)`,
+		safeUsername, safeRealname, string(passhash), authid)
+	_, err = db.db.Exec(query)
 	if err != nil {
-		return nil, data.UsernameTakenError{Username: username}
+		fmt.Fprintln(os.Stderr, "insert error: "+err.Error())
+		return nil, ErrUsernameTaken
 	}
 
 	return createAuthCookie(username, authid), nil
@@ -153,7 +207,7 @@ func EscapeSQLString(s string) string {
 func genAuthId() (*big.Int, error) {
 	authid, err := rand.Int(rand.Reader, big.NewInt(maxAuthId))
 	if err != nil {
-		return nil, data.ErrRandGeneration
+		return nil, ErrRandGeneration
 	}
 	return authid, nil
 }
@@ -192,6 +246,19 @@ func parseAuthCookie(cookie *http.Cookie) (string, int64) {
 // ValidUsername checks to make sure that username is an acceptable username
 func ValidUsername(username string) bool {
 	return username != "" && !strings.ContainsAny(username, `!@#$%^&*~+'"`)
+}
+
+// ValidPassword checks to see if the given password is an acceptable password.
+//
+// Currently, the only requirement for passwords is that they be more than 8
+// characters in length.
+func ValidPassword(password string) bool {
+	return len(password) > 8
+}
+
+// ValidRealName checks to see if the real, human name was valid.
+func ValidRealName(name string) bool {
+	return len(name) > 0
 }
 
 // GetAuthCookie finds the cookie from the slice that identifies a user.

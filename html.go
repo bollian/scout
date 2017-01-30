@@ -2,65 +2,76 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 )
 
-func startForm(title string, writer io.Writer) {
-	writer.Write([]byte(`<!DOCTYPE html>
-<html>
+const (
+	frmLoginButtons = `
+<a id="login-link">
+	<div id="login-box" href="/login">
+		Log In
+	</div>
+</a><a id="signup-link">
+	<div id="signup-box" href="/signup">
+		Sign Up
+	</div>
+<a/>`
+)
+
+func genPageStart(title string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<title>`))
-	writer.Write([]byte(title))
-	writer.Write([]byte(`</title>
+		<title>%s</title>
 	</head>
-	<body>`))
-	insertStylesheet("main", writer)
-	insertScript("main", writer)
+	<body>`, title)
 }
 
-func endForm(writer io.Writer) {
-	writer.Write([]byte("</body></html>"))
+func genPageEnd() string {
+	return "</body></html>"
 }
 
-func insertStylesheet(name string, writer io.Writer) {
-	writer.Write([]byte("<link href=\"/" + name + ".css\" rel=\"stylesheet\" type=\"text/css\"/>"))
+func genStylesheetElement(name string) string {
+	return fmt.Sprintf(`<link href="%s.css" rel="stylesheet" type="text/css"/>`, name)
 }
 
-func insertScript(name string, writer io.Writer) {
-	writer.Write([]byte("<script src=\"/" + name + ".js\" type=\"text/javascript\"></script>"))
+func genScriptElement(name string) string {
+	return fmt.Sprintf(`<script src="%s.js" type="text/javascript"></script>`, name)
 }
 
-func insertTopBar(writer io.Writer) {
-	insertStylesheet("topbar", writer)
-	writer.Write([]byte(`
+func genTopBar(request *http.Request) string {
+	return fmt.Sprintf(`
+%s
 <div class="top-bar-container">
 	<div class="top-bar-horizontal">
 		<a href="/">some icon</a>
-		<span>some title</span>
-		<div>login/signup button</div>
+		<span class="top-bar-title">εΔ Scout</span>
+		<div class="top-bar-user">some user</div>
 	</div>
 </div>
-<div class="top-bar-spacer"></div>`))
+<div class="top-bar-spacer"></div>`, genStylesheetElement("topbar"))
 }
 
-func genErrorForm(msg string) string {
-	if msg == "" {
-		return msg
-	}
-	return fmt.Sprintf(`<span class="error-message">%s<br></span>`, msg)
-}
-
-func genUserForm(value string) string {
-	frm := `<input name="username" type="text" required `
+func genTextInput(name, value, placeholder string, required bool) string {
 	if value != "" {
-		frm += fmt.Sprintf(`value="%s" `, value)
+		value = fmt.Sprintf(`value="%s"`, value)
 	}
-	frm += `placeholder="Username">`
-	return frm
+	requiredAttribute := ""
+	if required {
+		requiredAttribute = "required"
+	}
+	return fmt.Sprintf(`<input name="%s" %s placeholder="%s" type="text" %s>`, name, value, placeholder, requiredAttribute)
 }
 
-func redirect(writer http.ResponseWriter) {
+func genPasswordForm(name string, placeholder string) string {
+	return fmt.Sprintf(`<input name="%s" placeholder="%s" type="password">`, name, placeholder)
+}
 
+func genTeamNumberForm(value int) string {
+	valueAttribute := ""
+	if value > 0 {
+		valueAttribute = fmt.Sprintf(`value="%d"`, value)
+	}
+	return fmt.Sprintf(`<input name="team-number" %s placeholder="Team Number" type="number" min="1" step="1">`, valueAttribute)
 }

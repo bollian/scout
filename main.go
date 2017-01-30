@@ -1,82 +1,36 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"log"
+	"net/http"
 	"os"
-	"path/filepath"
-	"scout/server"
 )
 
 const (
 	exitSuccess = iota
-	exitNewServerError
 	exitCacheError
-	exitListenerError
+	exitServeError
 )
 
 func main() {
-	defer func() {
-		if err := server.Close(); err != nil {
-			panic(err.Error())
-		}
-	}()
-
-	exit := program()
-	if exit != exitSuccess {
-		os.Exit(exit)
+	var exitCode int = program()
+	if exitCode != 0 {
+		os.Exit(exitCode)
 	}
 }
 
 func program() int {
-	folders := map[string]string{
-		"css": "text/css",
-		"js":  "text/javascript",
-		"img": "image/jpeg",
-	}
-	for folder, contentType := range folders {
-		err := filepath.Walk(folder, func(p string, info os.FileInfo, err error) error {
-			if info.IsDir() {
-				return nil
-			}
-
-			f, ferr := os.Open(p)
-			if ferr != nil {
-				return ferr
-			}
-			defer f.Close()
-
-			data := make([]byte, info.Size())
-			f.Read(data)
-			if !server.Cache("/"+info.Name(), data, contentType) {
-				return errors.New("duplicate cache names")
-			}
-			return nil
-		})
-		if err != nil {
-			log.Printf("Error constructing cache (%s)\n", err.Error())
-			return exitCacheError
-		}
-	}
-
-	server.Handle("/login", server.HandlerFunc(loginHandler))
-	server.Handle("/logout", server.HandlerFunc(logoutHandler))
-	server.Handle("/signup", server.HandlerFunc(signupHandler))
-
-	server.Handle("/competitions", server.HandlerFunc(competitionsHandler))
-	server.Handle("/teams", server.HandlerFunc(teamsHandler))
-	server.Handle("/all", server.HandlerFunc(allDataHandler))
-	server.Handle("/matches", server.HandlerFunc(matchesHandler))
-	server.Handle("/submit", server.HandlerFunc(submissionHandler))
-
-	server.Handle("/", server.HandlerFunc(indexHandler))
-
-	err := server.ListenAndServe()
+	err := cacheStaticPages()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error running listener: %s\n", err.Error())
-		return exitListenerError
+		fmt.Fprintln(os.Stderr, "caching error: "+err.Error())
+		return exitCacheError
 	}
+	setupHandlers()
 
-	return exitSuccess
+	err = http.ListenAndServe(":80", nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "hosting error: "+err.Error())
+		return exitServeError
+	}
+	return 0
 }
