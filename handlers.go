@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"scout2/data"
+	"scout/data"
 	"strconv"
 	"strings"
 	"time"
